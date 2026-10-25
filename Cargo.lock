@@ -11,6 +11,8 @@ checksum = "320119579fcad9c21884f5c4861d16174d0e06250625266f50fe6898340abefa"
 [[package]]
 name = "bcn-decode"
 version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3a3d5cf71fc14b37654892fc02d25b45ddca03d4245e352510e3c55bdc5cda1f"
 
 [[package]]
 name = "bitflags"
@@ -101,6 +103,8 @@ checksum = "65cd87c9a6d60536580b316ad985726104730a5151c99845f2490428ef91240a"
 [[package]]
 name = "lztans"
 version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9fc7649bf3856d229a61455247f87acde5b0ff15aa3ef840840cd5213b041a1c"
 
 [[package]]
 name = "miniz_oxide"

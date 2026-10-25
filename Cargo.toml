@@ -20,10 +20,10 @@ exclude = ["oracle"]
 # zstd frames (none occurs in the game's files)
 ruzstd = "0.8"
 flate2 = "1"
-# Oodle streams (textures, models), clean-room; path dependency until it is published
-lztans = { path = "../lz-cleanroom-impl/crate" }
-# BC1..BC7 block decoders, for `Texture::to_rgba` and `Texture::to_png`; path dependency until it is published
-bcn-decode = { path = "../bcn-decode", optional = true }
+# Oodle streams (textures, models), clean-room (github.com/patodois/lztans)
+lztans = "0.1.0"
+# BC1..BC7 block decoders, for `Texture::to_rgba` and `Texture::to_png` (github.com/patodois/bcn-decode)
+bcn-decode = { version = "0.1.0", optional = true }
 png = { version = "0.18.1", optional = true }
 
 [dev-dependencies]

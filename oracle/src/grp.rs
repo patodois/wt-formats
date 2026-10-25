@@ -123,6 +123,10 @@ pub fn dyn_model(file: &str, res: &str, data: &[u8], t: &mut Tally) {
             t.count(k);
             return;
         }
+        (Err(wt_formats::Error::Decompress(why)), Ok(_)) if why.starts_with("Oodle: Corrupt") => {
+            t.count("difference: lztans reports a corrupt Oodle stream that oozextract decodes to something (mutated data)");
+            return;
+        }
         (a, b) => {
             t.diff("model verdict", format!("{file} {res}: ours {:?}, theirs {:?}", a.err(), b.err()));
             return;

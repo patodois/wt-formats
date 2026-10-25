@@ -96,7 +96,7 @@ cargo run --release --bin wt-formats-oracle -- fuzz "$GAME"       # mutated inpu
   take 4 bytes a pixel.
 
 Dependencies are pure Rust: the Oodle-family decoder is
-`lztans` (clean-room, MIT OR Apache-2.0), the block decoders `bcn-decode` (written from the public specifications)
+[`lztans`](https://github.com/patodois/lztans) (clean-room, MIT OR Apache-2.0), the block decoders [`bcn-decode`](https://github.com/patodois/bcn-decode) (written from the public specifications)
 and zstd is [`ruzstd`](https://crates.io/crates/ruzstd) (only the first frame is read, and a frame whose window is larger
 than `max(8 MiB, twice the data it may hold)` is refused before the decoder allocates it). Both say they do not panic on
 malformed input (and the tests here check it), so nothing depends on `panic = "unwind"`.

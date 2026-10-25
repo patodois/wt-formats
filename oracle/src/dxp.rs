@@ -145,7 +145,7 @@ pub fn compare_pack(name: &str, data: &[u8], t: &mut Tally) {
                     (Ok((rx, nx)), Ok((ry, ny))) => {
                         t.count("textures converted to RGBA by both");
                         if rx != ry || nx != ny {
-                            t.diff("rgba", format!("{name}: #{i} {} {}", a.name, h.format_name()));
+                            let mut explained = false;
                             // How much: decode both again and count
                             if let (Ok(p), Ok(q)) = (ours.texture(i).and_then(|t| t.to_rgba()), theirs.texture(i).map_err(|e| format!("{e:?}")).and_then(|t| t.to_rgba().map_err(|e| format!("{e:?}")))) {
                                 let f = h.format_name();
@@ -158,6 +158,15 @@ pub fn compare_pack(name: &str, data: &[u8], t: &mut Tally) {
                                         worst = worst.max(d);
                                     }
                                 }
+                                // BC2 and BC3 colour blocks whose first endpoint is not above the second: bcn-decode always
+                                // uses four colours there, texture2ddecoder switches to three
+                                if matches!(h.format_name().as_str(), "DXT3" | "DXT5") {
+                                    if let Ok(tex) = ours.texture(i) {
+                                        let outside = differing_outside_three_colour_blocks(h.width as usize, &tex.data, &p, &q);
+                                        t.add(format!("rgba differs [{f}]: differing pixels in blocks where color0 > color1"), outside);
+                                        explained = outside == 0;
+                                    }
+                                }
                                 t.count(format!("rgba differs [{f}]: textures"));
                                 t.add(format!("rgba differs [{f}]: pixels differing"), differing);
                                 t.add(format!("rgba differs [{f}]: pixels in those textures"), (p.len() / 4) as u64);
@@ -165,6 +174,11 @@ pub fn compare_pack(name: &str, data: &[u8], t: &mut Tally) {
                                 if worst > 3 {
                                     t.sample(&format!("rgba differs by more than 3 [{f}]"), format!("{name}: #{i} {} worst {worst}, {differing} pixels of {}", a.name, p.len() / 4));
                                 }
+                            }
+                            if explained {
+                                t.count("difference, explained: BC2/BC3 colour block with color0 <= color1 (bcn-decode uses four colours, texture2ddecoder three)");
+                            } else {
+                                t.diff("rgba", format!("{name}: #{i} {} {}", a.name, h.format_name()));
                             }
                         }
                     }
@@ -176,6 +190,12 @@ pub fn compare_pack(name: &str, data: &[u8], t: &mut Tally) {
             (Err(ex), Ok(_)) if ex == "Unsupported:compression" => {
                 t.count("intended difference: flag bits 5 to 7 of the compression are refused by ours, read as stored by wt_blk");
             }
+            (Ok(_), Err(ey)) if ey == "Decompression" && h.compression() == wt_formats::ddsx::Compression::Oodle => {
+                t.count("difference: oozextract refuses a mutated Oodle stream that lztans decodes (mutated data)");
+            }
+            (Err(ex), Ok(_)) if ex == "Decompress:oodle-corrupt" => {
+                t.count("difference: lztans reports a corrupt Oodle stream that oozextract decodes to something (mutated data)");
+            }
             (ex, ey) => {
                 t.diff("texture verdict", format!("{name}: #{i} {}: ours {:?}, theirs {:?}", a.name, ex.as_ref().err(), ey.as_ref().err()))
             }
@@ -185,6 +205,9 @@ pub fn compare_pack(name: &str, data: &[u8], t: &mut Tally) {
 
 fn outcome_ours(pack: &OurPack, i: usize) -> Outcome {
     match pack.texture(i) {
+        Err(wt_formats::Error::Decompress(why)) if why.starts_with("Oodle: Corrupt") => {
+            Outcome { texture: Err("Decompress:oodle-corrupt".into()), rgba: Err("-".into()) }
+        }
         Err(wt_formats::Error::Unsupported(why)) if why.starts_with("compression ") => {
             Outcome { texture: Err("Unsupported:compression".into()), rgba: Err("-".into()) }
         }
@@ -216,4 +239,23 @@ fn outcome_theirs(pack: &TheirPack, i: usize) -> Outcome {
             Outcome { texture, rgba }
         }
     }
+}
+
+/// Of the pixels that differ between two RGBA decodings of a BC2 or BC3 texture, how many are in blocks whose
+/// colour endpoints satisfy color0 > color1 (where the two decoders must agree).
+pub fn differing_outside_three_colour_blocks(width: usize, data: &[u8], p: &[u8], q: &[u8]) -> u64 {
+    let bw = width.div_ceil(4);
+    let mut outside = 0;
+    for (k, (u, v)) in p.chunks_exact(4).zip(q.chunks_exact(4)).enumerate() {
+        if u != v {
+            let (x, y) = (k % width, k / width);
+            let at = ((y / 4) * bw + x / 4) * 16 + 8;
+            let c0 = u16::from_le_bytes([data[at], data[at + 1]]);
+            let c1 = u16::from_le_bytes([data[at + 2], data[at + 3]]);
+            if c0 > c1 {
+                outside += 1;
+            }
+        }
+    }
+    outside
 }

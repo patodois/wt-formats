@@ -100,6 +100,8 @@ dependencies = [
 [[package]]
 name = "bcn-decode"
 version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3a3d5cf71fc14b37654892fc02d25b45ddca03d4245e352510e3c55bdc5cda1f"
 
 [[package]]
 name = "bitflags"
@@ -478,6 +480,8 @@ checksum = "f9f8bd3e56ce4dfc153cf470fffbfa98c7620958b312ca5c3a4b8d5181fd13c6"
 [[package]]
 name = "lztans"
 version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9fc7649bf3856d229a61455247f87acde5b0ff15aa3ef840840cd5213b041a1c"
 
 [[package]]
 name = "matchers"

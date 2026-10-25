@@ -302,7 +302,13 @@ fn compare_texture(header: &[u8], raw: &[u8], what: &str, t: &mut Tally) {
                 (Ok(p), Ok(q)) => {
                     t.count("ddsx rgba: both convert");
                     if hash(&p) != hash(&q) {
-                        t.diff("ddsx rgba", format!("{what}: {:?}", fields(&a)));
+                        let three_colour = matches!(a.format_name().as_str(), "DXT3" | "DXT5")
+                            && dxp::differing_outside_three_colour_blocks(a.width as usize, &x.data, &p, &q) == 0;
+                        if three_colour {
+                            t.count("difference, explained: BC2/BC3 colour block with color0 <= color1 (bcn-decode uses four colours, texture2ddecoder three)");
+                        } else {
+                            t.diff("ddsx rgba", format!("{what}: {:?}", fields(&a)));
+                        }
                     }
                 }
                 (Err(_), Err(_)) => t.count("ddsx rgba: both refuse"),
