@@ -62,7 +62,7 @@ meshoptimizer's index codec (MIT, Arseny Kapoulkine) is the format of `src/mesho
 ## How it was checked
 
 - **Unit tests** on synthetic inputs (`cargo test --features png`): every layout is built by hand, including the
-  failure cases (59 tests).
+  failure cases (61 tests with the `png` feature, 55 without).
 - **Hostile input tests** (`src/hostile.rs`): well-formed files with bytes changed, cut and replaced by extreme
   values, 20,000 per format by default (`WT_FORMATS_FUZZ_ITERATIONS` for more; 1,000,000 each were run, and with
   `WT_GAME_DIR` set also mutations of real tank models and skeletons). Parsing must not panic and no single

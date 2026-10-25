@@ -2,11 +2,15 @@
 
 `oracle/` is a separate program (not part of the crate) that parses the same bytes with this crate and with the
 fork `patodois/wt_blk` at `498c996`, which wt-unpack used before, and compares the results. The readers it
-compares with are this project's own earlier code (its pull requests #28 and #29 to wt_blk), and the decoder crates
-underneath are the same, so this is a regression check, not an independent validation of the layouts: that is what
-the surveys of the game's bytes in [FORMATS.md](FORMATS.md) are for. The fork is a black box here: nothing it does
+compares with are this project's own earlier code (its pull requests #28 and #29 to wt_blk), so this is a regression
+check, not an independent validation of the layouts: that is what the surveys of the game's bytes in
+[FORMATS.md](FORMATS.md) are for. The decoders underneath are independent, though: this crate unpacks Oodle with
+`lztans` and decodes BC1 to BC7 with `bcn-decode` (both from crates.io), the fork uses `oozextract` and
+`texture2ddecoder`. The fork is a black box here: nothing it does
 is assumed right. Run on War Thunder 2.59.0.80 (macOS), 3 worker threads, peak resident
-memory 0.92 GB (GRP) and 2.65 GB (DXP, mostly memory-mapped file pages).
+memory 0.90 GB (GRP) and 2.63 GB (DXP, mostly memory-mapped file pages). The numbers are those of the last run, with
+`lztans` 0.1.0 and `bcn-decode` 0.1.0 from crates.io; the run before it, with the same code through path dependencies and
+the earlier `oozextract` and `texture2ddecoder`, gave the same.
 
 ## GRP packs: `oracle grp`
 
@@ -38,18 +42,20 @@ Differences: **0**.
 | Refused by both | 28,970: 28,595 label-only entries and 375 stored as differences to a paired base texture |
 
 Differences: **0**. The statistics of the headers (formats, flags, sizes) are in the output of `oracle dxp` and
-summarised in [FORMATS.md](FORMATS.md#what-the-install-holds). The RGBA conversion uses the same block decoder
-crate in both libraries (`texture2ddecoder`), so that check covers the code around it (sizes, swizzles, the
-formats that are not blocks), not the decoder.
+summarised in [FORMATS.md](FORMATS.md#what-the-install-holds). The Oodle streams of the 124,561 packed textures and of
+16,663 model blocks are unpacked by `lztans` here and by `oozextract` there, and the 147,960 RGBA images come from
+`bcn-decode` here and `texture2ddecoder` there: the bytes are identical. (`bcn-decode` documents two places where it
+follows the specifications and `texture2ddecoder` does not, BC2/BC3 colour blocks whose first endpoint is not above
+the second and BC6H mode 15. The first is found by the fuzzing below; no War Thunder texture has it.)
 
 ## Mutated and random inputs: `oracle fuzz`
 
 400,000 mutations of real resources (models and skeletons of two tanks, 60 small GRP packs, 60 small DXP packs;
 bytes changed, words set to 0, 1, 0x7FFFFFFF, 0x80000000, 0xFFFFFFFF..., cut, copied over each other), 400,000
 random or mutated packed index buffers, and 200,000 synthetic DDSx headers (random format, flags, sizes, stored,
-zstd or Oodle data). Neither library panicked outside the Oodle decoder's own panics (below).
+zstd or Oodle data). Nothing panicked (wt_blk turns `oozextract`'s panics on malformed streams into errors; `lztans` has none to turn).
 
-Results: 153,301 packs, 28,799 models, 61,505 skeletons and 74,125 index buffers parsed by both with identical
+Results: 153,301 packs, 28,670 models, 61,505 skeletons and 74,125 index buffers parsed by both with identical
 output; the rest refused by both. Unexplained differences: **0**. Explained ones, counted apart:
 
 | Difference | Count | Cause, and who is right |
@@ -58,6 +64,9 @@ output; the rest refused by both. Unexplained differences: **0**. Explained ones
 | Compression bits 5 to 7 of the DDSx flags | 10,841 | No packer is known for them. wt_blk reads the data as stored (and then, most of the time, fails the size checks); this crate refuses. |
 | 64-bit name or parent pointer with bits above 32 set | 3,476 | wt_blk reads the low 32 bits; this crate reads 64 and finds the offset out of range. A pointer with those bits set is wrong in either reading. |
 | Oodle stream of 3 to 5 bytes (a stored block of 1 to 3 bytes) | 13 | **This crate is right.** wt_blk refuses it because it assumes 6 bytes of stream per 256 KiB block; the stream is valid and the decoder unpacks it. No texture of the game is that small. |
+| BC2 or BC3 block with color0 <= color1 | 1,802 textures (synthetic and mutated) | `bcn-decode` always uses four colours for these formats, as the specifications say; `texture2ddecoder` switches to three. In every one of these textures all differing pixels lie in such blocks. None of the 147,960 textures of the game has one. |
+| Mutated Oodle stream that `lztans` calls corrupt and `oozextract` decodes to something | 644 | There is no checksum to say who is right; both unpack every real stream identically. `lztans` checks more. |
+| Mutated Oodle stream that `oozextract` refuses and `lztans` decodes | 42 | The other direction, same remark. |
 
 In the model sweep one more difference of design is not exercised by fuzzing: this crate refuses a skinned-mesh
 section with other than one variant or with a gap (see [FORMATS.md](FORMATS.md#not-seen-in-the-data)).
