@@ -12,7 +12,8 @@ categories = ["game-development", "parser-implementations"]
 exclude = ["oracle/", "target/"]
 
 [workspace]
-# The oracle (oracle/) compares this crate with wt_blk on a game install; it is not part of the crate.
+# The oracle (oracle/) compares this crate with the earlier readers of the project on a game install; it is not
+# part of the crate.
 exclude = ["oracle"]
 
 [dependencies]

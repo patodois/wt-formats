@@ -1,9 +1,8 @@
-// Provenance: this file reads a layout that wt_blk documented first, and it is substantially similar to
-// wt_blk's `src/dxp_and_grp/grp_pack.rs` (github.com/Warthunder-Open-Source-Foundation/wt_blk, fork
-// github.com/patodois/wt_blk at 498c996). That code was written by this project's author (wt_blk pull requests
-// #28 and #29); no line of it is by wt_blk's upstream author. wt_blk declares MIT in its Cargo.toml and
-// ships an Apache-2.0 LICENSE file; both are compatible with this crate's MIT OR Apache-2.0. See the README,
-// "Provenance", for how the similarity was measured.
+// Provenance: this file is substantially similar to this project's own code in `src/dxp_and_grp/grp_pack.rs` of
+// the unmerged wt_blk pull requests #28 and #29 (github.com/patodois/wt_blk, commit 498c996), after which it was
+// written. That code follows the Dagor Engine sources (BSD-3-Clause, github.com/GaijinEntertainment/DagorEngine).
+// No line of wt_blk's upstream author is in it.
+// See the README, "Credit and provenance".
 
 //! GRP packs: Dagor's game resource packs (`*.grp`), which hold models, skeletons, collision and
 //! placed-object resources by name and class.
@@ -23,22 +22,28 @@ pub mod class_id {
     pub const REND_INST: u32 = 0x77F8_232F;
 }
 
-/// One entry of a pack's resource table.
+/// One entry of a pack's resource table. It borrows its bytes from the file the pack was parsed from, so
+/// it can be used (and its data read) without the pack, and never with another pack's data.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct GrpResource {
+pub struct GrpResource<'a> {
     /// The resource's name.
     pub name: String,
     /// What kind of resource it is, see [`class_id`].
     pub class_id: u32,
-    offset: usize,
-    size: usize,
+    data: &'a [u8],
+}
+
+impl<'a> GrpResource<'a> {
+    /// The bytes of the resource.
+    pub fn data(&self) -> &'a [u8] {
+        self.data
+    }
 }
 
 /// A parsed GRP file, borrowing the bytes it was parsed from.
 pub struct GrpPack<'a> {
-    file: &'a [u8],
     /// Resources in the order of the pack's table.
-    pub resources: Vec<GrpResource>,
+    pub resources: Vec<GrpResource<'a>>,
 }
 
 impl<'a> GrpPack<'a> {
@@ -91,18 +96,18 @@ impl<'a> GrpPack<'a> {
             if *offset > end || end > file.len() {
                 return Err(Error::invalid(format!("resource {name} lies outside the file")));
             }
-            resources.push(GrpResource { name: name.clone(), class_id: *class_id, offset: *offset, size: end - offset });
+            resources.push(GrpResource { name: name.clone(), class_id: *class_id, data: &file[*offset..end] });
         }
-        Ok(GrpPack { file, resources })
+        Ok(GrpPack { resources })
     }
 
-    /// The bytes of a resource of this pack.
-    pub fn data(&self, resource: &GrpResource) -> &'a [u8] {
-        &self.file[resource.offset..resource.offset + resource.size]
+    /// The bytes of a resource of this pack (the same as [`GrpResource::data`]).
+    pub fn data(&self, resource: &GrpResource<'a>) -> &'a [u8] {
+        resource.data
     }
 
     /// The first resource with this name and class.
-    pub fn find(&self, name: &str, class_id: u32) -> Option<&GrpResource> {
+    pub fn find(&self, name: &str, class_id: u32) -> Option<&GrpResource<'a>> {
         self.resources.iter().find(|r| r.name == name && r.class_id == class_id)
     }
 }
@@ -125,7 +130,7 @@ pub(crate) mod tests {
             out.extend_from_slice(name.as_bytes());
             out.push(0);
         }
-        while out.len() % 4 != 0 {
+        while !out.len().is_multiple_of(4) {
             out.push(0);
         }
         let names_at = out.len();
@@ -161,6 +166,17 @@ pub(crate) mod tests {
         assert_eq!(p.data(p.find("b", class_id::GEOM_NODE_TREE).unwrap()), b"56");
         assert_eq!(p.data(&p.resources[2]), b"");
         assert!(p.find("a", class_id::GEOM_NODE_TREE).is_none());
+    }
+
+    #[test]
+    fn a_resource_of_another_pack_reads_its_own_bytes() {
+        let a = pack(&[("a", 1, b"first")]);
+        let b = pack(&[("b", 1, b"second and longer")]);
+        let (pa, pb) = (GrpPack::parse(&a).unwrap(), GrpPack::parse(&b).unwrap());
+        // Asking one pack for the data of the other pack's resource gives that resource's bytes, as it
+        // used to be a slice out of range of the wrong file
+        assert_eq!(pa.data(&pb.resources[0]), b"second and longer");
+        assert_eq!(pb.resources[0].data(), b"second and longer");
     }
 
     #[test]

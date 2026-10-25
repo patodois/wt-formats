@@ -1,9 +1,8 @@
-// Provenance: this file reads a layout that wt_blk documented first, and it is substantially similar to
-// wt_blk's `src/dxp_and_grp/unpack.rs` (github.com/Warthunder-Open-Source-Foundation/wt_blk, fork
-// github.com/patodois/wt_blk at 498c996). That code was written by this project's author (wt_blk pull requests
-// #28 and #29); no line of it is by wt_blk's upstream author. wt_blk declares MIT in its Cargo.toml and
-// ships an Apache-2.0 LICENSE file; both are compatible with this crate's MIT OR Apache-2.0. See the README,
-// "Provenance", for how the similarity was measured.
+// Provenance: this file is substantially similar to this project's own code in `src/dxp_and_grp/unpack.rs` of
+// the unmerged wt_blk pull requests #28 and #29 (github.com/patodois/wt_blk, commit 498c996), after which it was
+// written. That code follows the Dagor Engine sources (BSD-3-Clause, github.com/GaijinEntertainment/DagorEngine).
+// No line of wt_blk's upstream author is in it.
+// See the README, "Credit and provenance".
 
 //! Unpacking with sizes that come from file headers, which may lie.
 //!
@@ -15,9 +14,9 @@ use std::panic::{self, AssertUnwindSafe};
 
 use crate::error::{Error, Result};
 
-/// The most bytes any single block unpacks to. Keeps a hostile header from asking for 4 GiB. The largest
-/// texture in War Thunder 2.59.0.80 unpacks to 89,128,960 bytes (docs/FORMATS.md).
-pub const MAX_UNPACKED: usize = 1 << 30;
+/// The most bytes any single block unpacks to (256 MiB). The largest in War Thunder 2.59.0.80 is a texture
+/// of 89,128,960 bytes; the largest vertex data of a model is 32,211,452 (docs/FORMATS.md).
+pub const MAX_UNPACKED: usize = 256 << 20;
 
 /// Oodle's blocks start every 256 KiB of output, so a stream decoded into a buffer that ends on a
 /// block boundary yields the same bytes as the start of the full decode.

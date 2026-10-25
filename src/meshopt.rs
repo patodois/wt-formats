@@ -1,10 +1,8 @@
-// Provenance: this file reads a layout that wt_blk documented first, and it is substantially similar to
-// wt_blk's `src/dxp_and_grp/meshopt.rs` (github.com/Warthunder-Open-Source-Foundation/wt_blk, fork
-// github.com/patodois/wt_blk at 498c996). That code was written by this project's author (wt_blk pull requests
-// #28 and #29); no line of it is by wt_blk's upstream author. wt_blk declares MIT in its Cargo.toml and
-// ships an Apache-2.0 LICENSE file; both are compatible with this crate's MIT OR Apache-2.0. See the README,
-// "Provenance", for how the similarity was measured.
-
+// Provenance: this file is substantially similar to this project's own code in `src/dxp_and_grp/meshopt.rs` of
+// the unmerged wt_blk pull requests #28 and #29 (github.com/patodois/wt_blk, commit 498c996), after which it was
+// written. That code follows the Dagor Engine sources (BSD-3-Clause, github.com/GaijinEntertainment/DagorEngine).
+// No line of wt_blk's upstream author is in it.
+// See the README, "Credit and provenance".
 // The format is meshoptimizer's `meshopt_encodeIndexSequence` (MIT, Arseny Kapoulkine).
 
 //! Packed index buffers: the format of meshoptimizer's `meshopt_encodeIndexSequence`.

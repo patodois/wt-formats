@@ -1,9 +1,8 @@
-// Provenance: this file reads a layout that wt_blk documented first, and it is substantially similar to
-// wt_blk's `src/dxp_and_grp/ddsx.rs` (github.com/Warthunder-Open-Source-Foundation/wt_blk, fork
-// github.com/patodois/wt_blk at 498c996). That code was written by this project's author (wt_blk pull requests
-// #28 and #29); no line of it is by wt_blk's upstream author. wt_blk declares MIT in its Cargo.toml and
-// ships an Apache-2.0 LICENSE file; both are compatible with this crate's MIT OR Apache-2.0. See the README,
-// "Provenance", for how the similarity was measured.
+// Provenance: this file is substantially similar to this project's own code in `src/dxp_and_grp/ddsx.rs` of
+// the unmerged wt_blk pull requests #28 and #29 (github.com/patodois/wt_blk, commit 498c996), after which it was
+// written. That code follows the Dagor Engine sources (BSD-3-Clause, github.com/GaijinEntertainment/DagorEngine).
+// No line of wt_blk's upstream author is in it.
+// See the README, "Credit and provenance".
 
 //! DDSx: Dagor's texture container, the payload of each entry of a [`DXP`](crate::dxp) pack.
 //!
@@ -23,6 +22,11 @@ const FLAG_PAIRED_BASE: u32 = 0x0002_0000;
 const FLAG_SMALLEST_MIP_FIRST: u32 = 0x0004_0000;
 const FLAG_ARRAY: u32 = 0x0020_0000;
 const COMPRESSION_MASK: u32 = 0xE000_0000;
+
+/// The most pixels [`Texture::to_rgba`] and [`Texture::to_png`] convert: 8192 by 8192, the largest texture
+/// of War Thunder 2.59.0.80.
+#[cfg(feature = "png")]
+pub const MAX_RGBA_PIXELS: usize = 8192 * 8192;
 
 #[cfg(feature = "png")]
 const D3DFMT_A8R8G8B8: u32 = 21;
@@ -56,6 +60,7 @@ pub enum Compression {
 
 /// The 32-byte header of a texture.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct DdsxHeader {
     /// A `D3DFMT_*` number, or a FourCC such as `DXT5` read as a little-endian `u32`.
     pub d3d_format: u32,
@@ -198,6 +203,7 @@ impl DdsxHeader {
 /// A texture with its surface data unpacked and in DDS order: largest mip first, and for a cubemap
 /// each face with its whole mip chain.
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub struct Texture {
     /// The header the data was read with.
     pub header: DdsxHeader,
@@ -327,10 +333,15 @@ impl Texture {
     }
 
     /// Decodes the top mip (the first face or slice) to 8-bit RGBA, rows from the top. Half-float
-    /// formats are clamped to 0..1.
+    /// formats are clamped to 0..1. A texture of more than [`MAX_RGBA_PIXELS`] pixels is refused, so
+    /// that a small hostile file cannot ask for gigabytes of pixels; the conversion takes at most
+    /// 8 bytes a pixel while it runs.
     pub fn to_rgba(&self) -> Result<Vec<u8>> {
-        let top = self.top_mip()?;
         let (w, h) = (self.width() as usize, self.height() as usize);
+        if w * h > MAX_RGBA_PIXELS {
+            return Err(Error::unsupported(format!("converting {w}x{h} pixels to RGBA (the limit is {MAX_RGBA_PIXELS})")));
+        }
+        let top = self.top_mip()?;
         let four_cc = |s: &[u8; 4]| u32::from_le_bytes(*s);
         type BlockDecoder = fn(&[u8], usize, usize, &mut [u32]) -> std::result::Result<(), &'static str>;
         let block_decoder: Option<BlockDecoder> = match self.header.d3d_format {
@@ -357,13 +368,13 @@ impl Texture {
         }
         match self.header.d3d_format {
             // Bytes in memory are B, G, R, A
-            D3DFMT_A8R8G8B8 => top.chunks_exact(4).for_each(|p| rgba.extend_from_slice(&[p[2], p[1], p[0], p[3]])),
+            D3DFMT_A8R8G8B8 => top.as_chunks::<4>().0.iter().for_each(|p| rgba.extend_from_slice(&[p[2], p[1], p[0], p[3]])),
             D3DFMT_A8B8G8R8 => rgba.extend_from_slice(top),
             D3DFMT_L8 => top.iter().for_each(|&l| rgba.extend_from_slice(&[l, l, l, 0xFF])),
             D3DFMT_A8 => top.iter().for_each(|&a| rgba.extend_from_slice(&[0xFF, 0xFF, 0xFF, a])),
-            D3DFMT_A16B16G16R16F => top.chunks_exact(2).for_each(|c| rgba.push(unorm8(half_to_f32(u16::from_le_bytes([c[0], c[1]]))))),
-            D3DFMT_R16F => top.chunks_exact(2).for_each(|c| {
-                let r = unorm8(half_to_f32(u16::from_le_bytes([c[0], c[1]])));
+            D3DFMT_A16B16G16R16F => top.as_chunks::<2>().0.iter().for_each(|c| rgba.push(unorm8(half_to_f32(u16::from_le_bytes(*c))))),
+            D3DFMT_R16F => top.as_chunks::<2>().0.iter().for_each(|c| {
+                let r = unorm8(half_to_f32(u16::from_le_bytes(*c)));
                 rgba.extend_from_slice(&[r, r, r, 0xFF]);
             }),
             _ => unreachable!("top_mip rejected the other formats"),

@@ -1,9 +1,8 @@
-// Provenance: this file reads a layout that wt_blk documented first, and it is substantially similar to
-// wt_blk's `src/dxp_and_grp/geom_node_tree.rs` (github.com/Warthunder-Open-Source-Foundation/wt_blk, fork
-// github.com/patodois/wt_blk at 498c996). That code was written by this project's author (wt_blk pull requests
-// #28 and #29); no line of it is by wt_blk's upstream author. wt_blk declares MIT in its Cargo.toml and
-// ships an Apache-2.0 LICENSE file; both are compatible with this crate's MIT OR Apache-2.0. See the README,
-// "Provenance", for how the similarity was measured.
+// Provenance: this file is substantially similar to this project's own code in `src/dxp_and_grp/geom_node_tree.rs` of
+// the unmerged wt_blk pull requests #28 and #29 (github.com/patodois/wt_blk, commit 498c996), after which it was
+// written. That code follows the Dagor Engine sources (BSD-3-Clause, github.com/GaijinEntertainment/DagorEngine).
+// No line of wt_blk's upstream author is in it.
+// See the README, "Credit and provenance".
 
 //! GeomNodeTrees: the skeleton of a model, a tree of named nodes that place its parts.
 //!
@@ -46,7 +45,9 @@ impl GeomNodeTree {
         let count_word = r.u32()?;
         let count = (count_word & 0x7FFF_FFFF) as usize;
         let packed = count_word & 0x8000_0000 != 0;
-        let dump = if packed { Cow::Owned(unpack_block(read_block(&mut r)?)?) } else { Cow::Borrowed(r.rest()) };
+        // The dump is `dump_size` bytes (at most a mebibyte, the field has 20 bits), so a packed one is
+        // never unpacked past that
+        let dump = if packed { Cow::Owned(unpack_block(read_block(&mut r)?, dump_size)?) } else { Cow::Borrowed(r.rest()) };
         if dump.len() < dump_size || dump_size / NODE < count {
             return Err(Error::invalid("the node tree is cut short"));
         }

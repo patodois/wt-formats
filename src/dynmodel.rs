@@ -1,9 +1,8 @@
-// Provenance: this file reads a layout that wt_blk documented first, and it is substantially similar to
-// wt_blk's `src/dxp_and_grp/dynmodel.rs` (github.com/Warthunder-Open-Source-Foundation/wt_blk, fork
-// github.com/patodois/wt_blk at 498c996). That code was written by this project's author (wt_blk pull requests
-// #28 and #29); no line of it is by wt_blk's upstream author. wt_blk declares MIT in its Cargo.toml and
-// ships an Apache-2.0 LICENSE file; both are compatible with this crate's MIT OR Apache-2.0. See the README,
-// "Provenance", for how the similarity was measured.
+// Provenance: this file is substantially similar to this project's own code in `src/dxp_and_grp/dynmodel.rs` of
+// the unmerged wt_blk pull requests #28 and #29 (github.com/patodois/wt_blk, commit 498c996), after which it was
+// written. That code follows the Dagor Engine sources (BSD-3-Clause, github.com/GaijinEntertainment/DagorEngine).
+// No line of wt_blk's upstream author is in it.
+// See the README, "Credit and provenance".
 
 //! DynModels: the models of vehicles, with their level-of-detail meshes and skinned parts.
 //!
@@ -259,7 +258,7 @@ fn channel_bytes(ty: u32) -> Result<usize> {
 fn read_vertex_data(r: &mut Reader, word: u32) -> Result<Vec<VData>> {
     if word & 0xE000_0000 == 0xC000_0000 {
         // Packed: header and buffers together in one block, the header being `word & 0x3FFFFFFF` bytes
-        let all = unpack_block(read_block(r)?)?;
+        let all = unpack_block(read_block(r)?, unpack::MAX_UNPACKED)?;
         return read_buffers(&all, (word & 0x3FFF_FFFF) as usize);
     }
     if word & 0xC000_0000 != 0 {
@@ -325,9 +324,9 @@ fn read_buffers(data: &[u8], payload_at: usize) -> Result<Vec<VData>> {
         let indices = if flags & INDEX_PACKED != 0 {
             decode_index_sequence(raw, index_count, wide)?
         } else if wide {
-            raw.chunks_exact(4).map(|c| u32::from_le_bytes([c[0], c[1], c[2], c[3]])).collect()
+            raw.as_chunks::<4>().0.iter().map(|c| u32::from_le_bytes(*c)).collect()
         } else {
-            raw.chunks_exact(2).map(|c| u32::from(u16::from_le_bytes([c[0], c[1]]))).collect()
+            raw.as_chunks::<2>().0.iter().map(|c| u32::from(u16::from_le_bytes(*c))).collect()
         };
         buffers.push(VData { stride, vertices, indices, channels });
     }
@@ -343,7 +342,7 @@ fn read_buffers(data: &[u8], payload_at: usize) -> Result<Vec<VData>> {
 /// The elements of the `ShaderMesh` at `at` in `dump` (pointers in it are relative to the start of
 /// `dump`). A mesh has an element table and a second one for its see-through parts; a flag in the
 /// word at +0x20 (bit 31) says the second table is not used.
-fn read_mesh(dump: &[u8], at: usize, buffers: &[VData]) -> Result<Vec<Elem>> {
+fn read_mesh(dump: &[u8], at: usize, buffers: &Checked) -> Result<Vec<Elem>> {
     let mut r = Reader::at(dump, at)?;
     let main = (r.size()?, r.size()?);
     r.skip(8)?;
@@ -369,19 +368,52 @@ fn read_mesh(dump: &[u8], at: usize, buffers: &[VData]) -> Result<Vec<Elem>> {
     Ok(elems)
 }
 
+/// The vertex buffers an element can name, with the largest index of each stretch of 1,024 indices of
+/// them, so that the largest index of any range comes without reading all of it (many elements over
+/// one long buffer would otherwise read it once each).
+struct Checked<'a> {
+    buffers: &'a [VData],
+    block_max: Vec<Vec<u32>>,
+}
+
+const INDEX_BLOCK: usize = 1024;
+
+impl<'a> Checked<'a> {
+    fn new(buffers: &'a [VData]) -> Self {
+        let block_max =
+            buffers.iter().map(|b| b.indices.chunks(INDEX_BLOCK).map(|c| c.iter().copied().max().unwrap_or(0)).collect()).collect();
+        Checked { buffers, block_max }
+    }
+
+    /// The largest of `indices[start..end]` of buffer `buffer`, `None` for an empty range.
+    fn range_max(&self, buffer: usize, start: usize, end: usize) -> Option<u32> {
+        let indices = &self.buffers[buffer].indices;
+        let blocks = &self.block_max[buffer];
+        let (first_whole, last_whole) = (start.div_ceil(INDEX_BLOCK), end / INDEX_BLOCK);
+        if first_whole >= last_whole {
+            return indices[start..end].iter().copied().max();
+        }
+        let edges = indices[start..first_whole * INDEX_BLOCK].iter().chain(&indices[last_whole * INDEX_BLOCK..end]).copied().max();
+        edges.max(blocks[first_whole..last_whole].iter().copied().max())
+    }
+}
+
 /// Makes every index an element names land on a vertex, so that users need not check.
-fn check_elem(elem: &Elem, buffers: &[VData]) -> Result<()> {
-    let buffer =
-        buffers.get(elem.vdata).ok_or_else(|| invalid(format!("an element uses vertex buffer {}, which does not exist", elem.vdata)))?;
-    let indices = elem
+fn check_elem(elem: &Elem, buffers: &Checked) -> Result<()> {
+    let buffer = buffers
+        .buffers
+        .get(elem.vdata)
+        .ok_or_else(|| invalid(format!("an element uses vertex buffer {}, which does not exist", elem.vdata)))?;
+    let end = elem
         .triangles
         .checked_mul(3)
         .and_then(|n| n.checked_add(elem.first_index))
-        .and_then(|end| buffer.indices.get(elem.first_index..end))
+        .filter(|&end| end <= buffer.indices.len())
         .ok_or_else(|| invalid("an element's indices are outside its buffer"))?;
-    let vertices = buffer.vertex_count();
-    if indices.iter().any(|&i| (i as usize).checked_add(elem.base_vertex).is_none_or(|v| v >= vertices)) {
-        return Err(invalid("an element names a vertex that does not exist"));
+    if let Some(largest) = buffers.range_max(elem.vdata, elem.first_index, end) {
+        if (largest as usize).checked_add(elem.base_vertex).is_none_or(|v| v >= buffer.vertex_count()) {
+            return Err(invalid("an element names a vertex that does not exist"));
+        }
     }
     Ok(())
 }
@@ -418,6 +450,7 @@ impl DynModel {
         let mut table = Reader::new(lods_dump);
         let (table_at, lod_count) = (table.size()?, table.size()?);
         check_table(lods_dump, table_at, lod_count, 16)?;
+        let checked = Checked::new(&vdata);
         let mut lods = Vec::with_capacity(lod_count);
         let mut skin_counts = Vec::with_capacity(lod_count);
         for l in 0..lod_count {
@@ -437,7 +470,7 @@ impl DynModel {
                 e.skip(16)?; // the bounding sphere
                 let node = node_name(e.size()?)?;
                 // The meshes follow the scene, one per rigid part
-                rigids.push(Rigid { node, elems: read_mesh(r.take(mesh_size)?, 0, &vdata)? });
+                rigids.push(Rigid { node, elems: read_mesh(r.take(mesh_size)?, 0, &checked)? });
             }
             // The skins are in a section of their own further on
             lods.push(Lod { range, rigids, skins: Vec::new() });
@@ -561,6 +594,7 @@ fn read_skins(r: &mut Reader, lods: &mut [Lod], counts: &[usize], node_name: &dy
     let end = section.saturating_add(8).saturating_add(total);
     let packed = r.take(end.checked_sub(r.pos()).ok_or_else(|| invalid("the skin section is longer than it says"))?)?;
     let stream = unpack::zlib(packed)?;
+    let checked = Checked::new(&buffers);
     let mut z = Reader::new(&stream);
     for (lod, &count) in lods.iter_mut().zip(counts) {
         let nodes = (0..count).map(|_| z.u32()).collect::<Result<Vec<_>>>()?;
@@ -571,7 +605,7 @@ fn read_skins(r: &mut Reader, lods: &mut [Lod], counts: &[usize], node_name: &dy
             }
             let dump = z.take(size & !SKIN_CURRENT_FORMAT)?;
             let (bones, materials) = read_bones(dump, node_name)?;
-            lod.skins.push(Skin { node: node_name(node as usize)?, elems: read_mesh(dump, 0x38, &buffers)?, bones, materials });
+            lod.skins.push(Skin { node: node_name(node as usize)?, elems: read_mesh(dump, 0x38, &checked)?, bones, materials });
         }
     }
     Ok(buffers)
@@ -881,6 +915,29 @@ pub(crate) mod tests {
         assert!(with(&[(0, 0, 0, u32::MAX, 0)]).is_err());
         assert!(with(&[(0, 0, 0, 1, u32::MAX)]).is_err());
         assert!(with(&[(0, 0, 0, 0x5555_5556, 0)]).is_err());
+    }
+
+    #[test]
+    fn the_largest_index_of_a_range_comes_from_blocks() {
+        // Indices that rise and fall, over buffers shorter and longer than a block, every range checked
+        let mut seed = 12345u64;
+        let mut next = move || {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            seed
+        };
+        for len in [0usize, 1, 5, INDEX_BLOCK - 1, INDEX_BLOCK, INDEX_BLOCK + 1, 3 * INDEX_BLOCK + 17] {
+            let indices: Vec<u32> = (0..len).map(|_| (next() % 1000) as u32).collect();
+            let buffers = [VData { stride: 4, vertices: vec![0; 4000], indices: indices.clone(), channels: vec![] }];
+            let checked = Checked::new(&buffers);
+            for _ in 0..300 {
+                let a = (next() as usize) % (len + 1);
+                let b = (next() as usize) % (len + 1);
+                let (start, end) = (a.min(b), a.max(b));
+                assert_eq!(checked.range_max(0, start, end), indices[start..end].iter().copied().max(), "{len}: {start}..{end}");
+            }
+        }
     }
 
     #[test]

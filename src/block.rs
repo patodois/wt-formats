@@ -1,13 +1,12 @@
-// Provenance: this file reads a layout that wt_blk documented first, and it is substantially similar to
-// wt_blk's `src/dxp_and_grp/dynmodel.rs (read_block, unpack_block)` (github.com/Warthunder-Open-Source-Foundation/wt_blk, fork
-// github.com/patodois/wt_blk at 498c996). That code was written by this project's author (wt_blk pull requests
-// #28 and #29); no line of it is by wt_blk's upstream author. wt_blk declares MIT in its Cargo.toml and
-// ships an Apache-2.0 LICENSE file; both are compatible with this crate's MIT OR Apache-2.0. See the README,
-// "Provenance", for how the similarity was measured.
+// Provenance: this file is substantially similar to this project's own code in `src/dxp_and_grp/dynmodel.rs (read_block, unpack_block)` of
+// the unmerged wt_blk pull requests #28 and #29 (github.com/patodois/wt_blk, commit 498c996), after which it was
+// written. That code follows the Dagor Engine sources (BSD-3-Clause, github.com/GaijinEntertainment/DagorEngine).
+// No line of wt_blk's upstream author is in it.
+// See the README, "Credit and provenance".
 
 //! Length-prefixed blocks, the unit Dagor's resource streams pack their large parts in.
 
-use crate::error::Result;
+use crate::error::{Error, Result};
 use crate::reader::Reader;
 use crate::unpack;
 
@@ -22,12 +21,16 @@ pub(crate) fn read_block<'a>(r: &mut Reader<'a>) -> Result<&'a [u8]> {
 }
 
 /// Unpacks the contents of a packed block: a zstd frame, or the unpacked size as a `u32` and then an
-/// Oodle stream.
-pub(crate) fn unpack_block(block: &[u8]) -> Result<Vec<u8>> {
+/// Oodle stream. The contents are at most `max` bytes: a caller that knows how long they have to be
+/// says so, and a block that unpacks to more is refused before it is unpacked in full.
+pub(crate) fn unpack_block(block: &[u8], max: usize) -> Result<Vec<u8>> {
     if block.starts_with(&ZSTD_MAGIC) {
-        return unpack::zstd(block, unpack::MAX_UNPACKED);
+        return unpack::zstd(block, max);
     }
     let mut r = Reader::new(block);
     let size = r.size()?;
+    if size > max {
+        return Err(Error::Decompress(format!("a block of {size} bytes where at most {max} are possible")));
+    }
     unpack::oodle(r.rest(), size)
 }

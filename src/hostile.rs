@@ -315,3 +315,69 @@ fn real_resources_cut_and_changed() {
         assert!(largest <= 64 * input.len() + (64 << 20), "mutation #{i}: {largest} bytes for {}", input.len());
     }
 }
+
+/// Packed data that claims, or turns out, to be far more than the file can use: nothing is allocated
+/// beyond what the reader proves it needs.
+#[test]
+fn decompression_bombs() {
+    use crate::unpack;
+    let zeros = |n: usize| zstd::bulk::compress(&vec![0u8; n], 3).unwrap();
+
+    // A packed skeleton whose dump is 256 bytes (the field has 20 bits, so a megabyte at most) but whose
+    // block holds 64 MiB of zeros
+    let frame = zeros(64 << 20);
+    assert!(frame.len() < 4 << 10);
+    let mut tree = Vec::new();
+    for v in [0x100u32, 0x8000_0001, frame.len() as u32 | 1 << 30] {
+        tree.extend_from_slice(&v.to_le_bytes());
+    }
+    tree.extend_from_slice(&frame);
+    let (r, largest) = probed(|| GeomNodeTree::parse(&tree));
+    assert!(r.is_err());
+    assert!(largest < 1 << 20, "a skeleton of 256 bytes made an allocation of {largest} bytes");
+
+    // The same, with an Oodle block that says it unpacks to 200 MiB
+    let mut tree = Vec::new();
+    for v in [0x100u32, 0x8000_0001, 14, 200 << 20] {
+        tree.extend_from_slice(&v.to_le_bytes());
+    }
+    tree.extend_from_slice(&[0x8C, 0x06, 0, 0, 0, 0]);
+    let (r, largest) = probed(|| GeomNodeTree::parse(&tree));
+    assert!(r.is_err());
+    assert!(largest < 1 << 20, "{largest}");
+
+    // zstd stops at the cap it is given, and no buffer grows to more than twice it
+    let (r, largest) = probed(|| unpack::zstd(&frame, 1 << 20));
+    assert!(r.is_err());
+    assert!(largest <= 2 << 20, "{largest}");
+    // zlib cannot expand more than about 1032 times, and the reader stops there
+    let enc = {
+        use std::io::Write;
+        let mut e = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::best());
+        e.write_all(&vec![0u8; 8 << 20]).unwrap();
+        e.finish().unwrap()
+    };
+    let (r, largest) = probed(|| unpack::zlib(&enc[..enc.len() / 2]));
+    assert!(r.is_err());
+    assert!(largest <= 2 * (enc.len() / 2 * 1032 + 64) + (1 << 16), "{largest}");
+}
+
+#[cfg(feature = "png")]
+#[test]
+fn a_small_file_cannot_ask_for_gigabytes_of_pixels() {
+    use crate::ddsx::MAX_RGBA_PIXELS;
+    // 9000 x 9000 BC1 (40 MB of zeros, a few KB packed): more pixels than are converted
+    let side = 9000u16;
+    assert!(usize::from(side) * usize::from(side) > MAX_RGBA_PIXELS);
+    let mem_size = (u32::from(side) / 4) * (u32::from(side) / 4) * 8;
+    let data = zstd::bulk::compress(&vec![0u8; mem_size as usize], 3).unwrap();
+    assert!(data.len() < 16 << 10);
+    let header = crate::ddsx::DdsxHeader { packed_size: data.len() as u32, ..dxt1(side, 1, 0x2000_0000, mem_size) };
+    let texture = Texture::from_ddsx(header, &data).unwrap();
+    let (r, largest) = probed(|| texture.to_rgba());
+    assert!(r.is_err());
+    assert!(largest < 1 << 20, "{largest}");
+    let (r, largest) = probed(|| texture.to_png());
+    assert!(r.is_err());
+    assert!(largest < 1 << 20, "{largest}");
+}

@@ -6,7 +6,7 @@
 //! - [`meshopt`]: the packed index buffers of models.
 //!
 //! The crate reads bytes you give it and never touches the game. It does not panic on malformed input,
-//! and what it allocates is bounded by the input (a block never unpacks to more than [`MAX_UNPACKED`] bytes).
+//! and what it allocates is bounded by the input, up to a cap (a block never unpacks to more than [`MAX_UNPACKED`] bytes).
 //! The layouts are written down in `docs/FORMATS.md` of the repository, with the evidence for each.
 //!
 //! ```no_run
