@@ -335,7 +335,7 @@ impl Texture {
     /// Decodes the top mip (the first face or slice) to 8-bit RGBA, rows from the top. Half-float
     /// formats are clamped to 0..1. A texture of more than [`MAX_RGBA_PIXELS`] pixels is refused, so
     /// that a small hostile file cannot ask for gigabytes of pixels; the conversion takes at most
-    /// 8 bytes a pixel while it runs.
+    /// 4 bytes a pixel.
     pub fn to_rgba(&self) -> Result<Vec<u8>> {
         let (w, h) = (self.width() as usize, self.height() as usize);
         if w * h > MAX_RGBA_PIXELS {
@@ -343,29 +343,21 @@ impl Texture {
         }
         let top = self.top_mip()?;
         let four_cc = |s: &[u8; 4]| u32::from_le_bytes(*s);
-        type BlockDecoder = fn(&[u8], usize, usize, &mut [u32]) -> std::result::Result<(), &'static str>;
-        let block_decoder: Option<BlockDecoder> = match self.header.d3d_format {
-            f if f == four_cc(b"DXT1") => Some(texture2ddecoder::decode_bc1),
-            f if f == four_cc(b"DXT3") => Some(texture2ddecoder::decode_bc2),
-            f if f == four_cc(b"DXT5") => Some(texture2ddecoder::decode_bc3),
-            f if f == four_cc(b"ATI1") => Some(texture2ddecoder::decode_bc4),
-            f if f == four_cc(b"ATI2") => Some(texture2ddecoder::decode_bc5),
-            f if f == four_cc(b"BC7 ") => Some(texture2ddecoder::decode_bc7),
+        let block_format = match self.header.d3d_format {
+            f if f == four_cc(b"DXT1") => Some(bcn_decode::Format::Bc1),
+            f if f == four_cc(b"DXT3") => Some(bcn_decode::Format::Bc2),
+            f if f == four_cc(b"DXT5") => Some(bcn_decode::Format::Bc3),
+            f if f == four_cc(b"ATI1") => Some(bcn_decode::Format::Bc4),
+            f if f == four_cc(b"ATI2") => Some(bcn_decode::Format::Bc5),
+            f if f == four_cc(b"BC7 ") => Some(bcn_decode::Format::Bc7),
             _ => None,
         };
+        if let Some(format) = block_format {
+            return bcn_decode::decode_rgba8_to_vec(format, top, w, h).map_err(|e| Error::Decompress(format!("{e:?}")));
+        }
 
         let bytes = (w * h).checked_mul(4).ok_or_else(|| Error::unsupported(format!("{w}x{h} pixels as RGBA")))?;
         let mut rgba = Vec::with_capacity(bytes);
-        if let Some(decode) = block_decoder {
-            let mut pixels = vec![0u32; w * h];
-            decode(top, w, h, &mut pixels).map_err(|e| Error::Decompress(e.to_owned()))?;
-            // The block decoders pack a pixel as 0xAARRGGBB
-            for p in pixels {
-                let [b, g, r, a] = p.to_le_bytes();
-                rgba.extend_from_slice(&[r, g, b, a]);
-            }
-            return Ok(rgba);
-        }
         match self.header.d3d_format {
             // Bytes in memory are B, G, R, A
             D3DFMT_A8R8G8B8 => top.as_chunks::<4>().0.iter().for_each(|p| rgba.extend_from_slice(&[p[2], p[1], p[0], p[3]])),

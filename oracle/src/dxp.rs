@@ -146,6 +146,26 @@ pub fn compare_pack(name: &str, data: &[u8], t: &mut Tally) {
                         t.count("textures converted to RGBA by both");
                         if rx != ry || nx != ny {
                             t.diff("rgba", format!("{name}: #{i} {} {}", a.name, h.format_name()));
+                            // How much: decode both again and count
+                            if let (Ok(p), Ok(q)) = (ours.texture(i).and_then(|t| t.to_rgba()), theirs.texture(i).map_err(|e| format!("{e:?}")).and_then(|t| t.to_rgba().map_err(|e| format!("{e:?}")))) {
+                                let f = h.format_name();
+                                let mut differing = 0u64;
+                                let mut worst = 0u8;
+                                for (u, v) in p.chunks_exact(4).zip(q.chunks_exact(4)) {
+                                    let d = u.iter().zip(v).map(|(a, b)| a.abs_diff(*b)).max().unwrap_or(0);
+                                    if d > 0 {
+                                        differing += 1;
+                                        worst = worst.max(d);
+                                    }
+                                }
+                                t.count(format!("rgba differs [{f}]: textures"));
+                                t.add(format!("rgba differs [{f}]: pixels differing"), differing);
+                                t.add(format!("rgba differs [{f}]: pixels in those textures"), (p.len() / 4) as u64);
+                                t.max(format!("max rgba differs [{f}]: largest channel difference"), u64::from(worst));
+                                if worst > 3 {
+                                    t.sample(&format!("rgba differs by more than 3 [{f}]"), format!("{name}: #{i} {} worst {worst}, {differing} pixels of {}", a.name, p.len() / 4));
+                                }
+                            }
                         }
                     }
                     (Err(ex), Err(ey)) => t.count(format!("rgba refused by both: ours {ex} / theirs {ey} [{}]", h.format_name())),

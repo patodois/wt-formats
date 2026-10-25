@@ -10,7 +10,6 @@
 //! produce that much: output grows as data comes out, and nothing ever grows past [`MAX_UNPACKED`].
 
 use std::io::Read;
-use std::panic::{self, AssertUnwindSafe};
 
 use crate::error::{Error, Result};
 
@@ -40,14 +39,8 @@ pub(crate) fn oodle(packed: &[u8], size: usize) -> Result<Vec<u8>> {
     let mut room = size.min(OODLE_FIRST_TRY);
     loop {
         let mut out = vec![0u8; room];
-        // The decoder panics on some malformed streams (a slice end past its input in the LZNA and
-        // Bitknit paths, an assertion while building a Huffman table), so a panic is an error here
-        let written = panic::catch_unwind(AssertUnwindSafe(|| oozextract::Extractor::new().read_from_slice(packed, &mut out)))
-            .map_err(|_| Error::Decompress("the Oodle decoder panicked".to_owned()))?
-            .map_err(|e| Error::Decompress(format!("Oodle: {e:?}")))?;
-        if written != room {
-            return Err(Error::Decompress(format!("Oodle stream gave {written} bytes, not {room}")));
-        }
+        // lztans fills the whole buffer or fails; it does not panic on malformed input
+        lztans::decode(packed, &mut out).map_err(|e| Error::Decompress(format!("Oodle: {e:?}")))?;
         if room == size {
             return Ok(out);
         }
@@ -55,13 +48,55 @@ pub(crate) fn oodle(packed: &[u8], size: usize) -> Result<Vec<u8>> {
     }
 }
 
-/// Unpacks zstd data of at most `max` bytes.
+/// The window a zstd frame asks its decoder to keep, from the frame header alone: the decoder allocates
+/// that much when it starts, whatever the frame really holds. `None` when `packed` does not begin with a
+/// frame header this function understands.
+fn zstd_window(packed: &[u8]) -> Option<u64> {
+    if packed.get(..4)? != [0x28, 0xB5, 0x2F, 0xFD] {
+        return None;
+    }
+    let descriptor = *packed.get(4)?;
+    let single_segment = descriptor & 0x20 != 0;
+    if !single_segment {
+        // A window descriptor: a power of two from 1 KiB and an eighth of it times 0 to 7 more
+        let w = *packed.get(5)?;
+        let base = 1u64 << (10 + u32::from(w >> 3));
+        return Some(base + base / 8 * u64::from(w & 7));
+    }
+    // A single segment: the window is the content size, which follows the (absent) window descriptor and the
+    // dictionary id
+    let dictionary = [0usize, 1, 2, 4][usize::from(descriptor & 3)];
+    let at = 5 + dictionary;
+    let size = match descriptor >> 6 {
+        0 => u64::from(*packed.get(at)?),
+        1 => u64::from(u16::from_le_bytes(packed.get(at..at + 2)?.try_into().ok()?)) + 256,
+        2 => u64::from(u32::from_le_bytes(packed.get(at..at + 4)?.try_into().ok()?)),
+        _ => u64::from_le_bytes(packed.get(at..at + 8)?.try_into().ok()?),
+    };
+    Some(size)
+}
+
+/// The largest window of a zstd frame that is unpacked into `max` bytes or less: what the decoder allocates
+/// for its window follows the frame header, not the data, so it is limited too. Frames that are not
+/// compressed in one piece can have windows a good deal larger than their content; 8 MiB is what zstd's
+/// default levels use.
+fn zstd_window_limit(max: usize) -> u64 {
+    (2 * max as u64).max(8 << 20)
+}
+
+/// Unpacks zstd data of at most `max` bytes. Only the first frame is read.
 pub(crate) fn zstd(packed: &[u8], max: usize) -> Result<Vec<u8>> {
     let max = max.min(MAX_UNPACKED);
+    match zstd_window(packed) {
+        Some(window) if window <= zstd_window_limit(max) => {}
+        Some(window) => {
+            return Err(Error::Decompress(format!("a zstd frame with a window of {window} bytes, for at most {max} bytes of data")))
+        }
+        None => return Err(Error::Decompress("not a zstd frame".to_owned())),
+    }
     let mut out = Vec::new();
-    zstd::stream::read::Decoder::new(packed)
-        .and_then(|d| d.take(max as u64 + 1).read_to_end(&mut out))
-        .map_err(|e| Error::Decompress(format!("zstd: {e}")))?;
+    let decoder = ruzstd::decoding::StreamingDecoder::new(packed).map_err(|e| Error::Decompress(format!("zstd: {e}")))?;
+    decoder.take(max as u64 + 1).read_to_end(&mut out).map_err(|e| Error::Decompress(format!("zstd: {e}")))?;
     if out.len() > max {
         return Err(Error::Decompress(format!("zstd data unpacks to more than {max} bytes")));
     }
@@ -115,6 +150,31 @@ mod tests {
         assert_eq!(zstd(&packed, 5000).unwrap(), [7u8; 1000]);
         assert!(zstd(&packed, 999).is_err());
         assert!(zstd(&packed[..packed.len() - 3], 1000).is_err());
+    }
+
+    #[test]
+    fn zstd_windows_come_from_the_frame_header() {
+        let magic = [0x28, 0xB5, 0x2F, 0xFD];
+        let frame = |rest: &[u8]| [&magic[..], rest].concat();
+        // Window descriptor: exponent 0 is 1 KiB; exponent 12 with mantissa 4 is 4 MiB and a half of it more
+        assert_eq!(zstd_window(&frame(&[0x00, 0x00])), Some(1024));
+        assert_eq!(zstd_window(&frame(&[0x00, 12 << 3 | 4])), Some(4 << 20).map(|b| b + b / 2));
+        // Single segment: the window is the content size, 1 byte, 2 bytes plus 256, 4 bytes, 8 bytes
+        assert_eq!(zstd_window(&frame(&[0x20, 200])), Some(200));
+        assert_eq!(zstd_window(&frame(&[0x60, 0x01, 0x02])), Some(0x201 + 256));
+        assert_eq!(zstd_window(&frame(&[0xA0, 0x00, 0x00, 0x10, 0x00])), Some(0x10_0000));
+        assert_eq!(zstd_window(&frame(&[0xE0, 0, 0, 0, 0, 1, 0, 0, 0])), Some(1 << 32));
+        // With a dictionary id of 1 byte in between
+        assert_eq!(zstd_window(&frame(&[0x21, 7, 200])), Some(200));
+        // Not frames, or cut
+        assert_eq!(zstd_window(&[]), None);
+        assert_eq!(zstd_window(&frame(&[])), None);
+        assert_eq!(zstd_window(&frame(&[0x60, 0x01])), None);
+        assert_eq!(zstd_window(b"not a frame"), None);
+        // A real frame of a megabyte made in one go
+        let packed = zstd::bulk::compress(&vec![5u8; 1 << 20], 3).unwrap();
+        assert!(zstd_window(&packed).unwrap() <= zstd_window_limit(1 << 20));
+        assert_eq!(zstd(&packed, 1 << 20).unwrap().len(), 1 << 20);
     }
 
     #[test]

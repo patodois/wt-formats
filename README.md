@@ -93,15 +93,18 @@ cargo run --release --bin wt-formats-oracle -- fuzz "$GAME"       # mutated inpu
 - A small zstd or Oodle stream can still describe a large, repetitive texture or vertex buffer: for those the bound is
   the cap, and buffers may reach twice it while they grow.
 - `Texture::to_rgba` and `to_png` refuse more than `MAX_RGBA_PIXELS` (8192 by 8192, the largest texture of the game) and
-  take at most 8 bytes a pixel while they run.
+  take 4 bytes a pixel.
 
-The Oodle decoder (`oozextract`) panics on some malformed streams; the panic is caught and returned as an error.
-That needs the default `panic = "unwind"`.
+Dependencies are pure Rust: the Oodle-family decoder is
+`lztans` (clean-room, MIT OR Apache-2.0), the block decoders `bcn-decode` (written from the public specifications)
+and zstd is [`ruzstd`](https://crates.io/crates/ruzstd) (only the first frame is read, and a frame whose window is larger
+than `max(8 MiB, twice the data it may hold)` is refused before the decoder allocates it). Both say they do not panic on
+malformed input (and the tests here check it), so nothing depends on `panic = "unwind"`.
 
 ## Features
 
 - `png` (off by default): `Texture::to_rgba` and `Texture::to_png`, with BC1 to BC5 and BC7 block decoders from
-  `texture2ddecoder` and the `png` encoder.
+  `bcn-decode` and the `png` encoder.
 
 ## License
 

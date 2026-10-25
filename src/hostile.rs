@@ -334,7 +334,8 @@ fn decompression_bombs() {
     tree.extend_from_slice(&frame);
     let (r, largest) = probed(|| GeomNodeTree::parse(&tree));
     assert!(r.is_err());
-    assert!(largest < 1 << 20, "a skeleton of 256 bytes made an allocation of {largest} bytes");
+    // (the decoder keeps the frame's window, 4 MiB here, and 8 MiB is the most it is allowed for so small a dump)
+    assert!(largest <= 8 << 20, "a skeleton of 256 bytes made an allocation of {largest} bytes");
 
     // The same, with an Oodle block that says it unpacks to 200 MiB
     let mut tree = Vec::new();
@@ -349,7 +350,7 @@ fn decompression_bombs() {
     // zstd stops at the cap it is given, and no buffer grows to more than twice it
     let (r, largest) = probed(|| unpack::zstd(&frame, 1 << 20));
     assert!(r.is_err());
-    assert!(largest <= 2 << 20, "{largest}");
+    assert!(largest <= 8 << 20, "{largest}");
     // zlib cannot expand more than about 1032 times, and the reader stops there
     let enc = {
         use std::io::Write;
@@ -380,4 +381,22 @@ fn a_small_file_cannot_ask_for_gigabytes_of_pixels() {
     let (r, largest) = probed(|| texture.to_png());
     assert!(r.is_err());
     assert!(largest < 1 << 20, "{largest}");
+}
+
+#[test]
+fn a_zstd_frame_claiming_a_huge_window_allocates_little() {
+    use crate::unpack;
+    // A frame whose header claims a window of 1 GiB, and one that really has a 128 MiB window and 140 MiB
+    // of zeros: the decoder would allocate the window, so neither is started
+    let claim = [0x28, 0xB5, 0x2F, 0xFD, 0x00, 0xF0, 0x01, 0x00, 0x00];
+    let (r, largest) = probed(|| unpack::zstd(&claim, 1 << 20));
+    assert!(r.is_err());
+    assert!(largest < 1 << 16, "{largest}");
+    let mut c = zstd::bulk::Compressor::new(3).unwrap();
+    c.set_parameter(zstd::zstd_safe::CParameter::WindowLog(27)).unwrap();
+    let big = c.compress(&vec![0u8; 140 << 20]).unwrap();
+    assert!(big.len() < 16 << 10);
+    let (r, largest) = probed(|| unpack::zstd(&big, 256));
+    assert!(r.is_err());
+    assert!(largest < 1 << 16, "a frame of {} bytes made an allocation of {largest} bytes", big.len());
 }

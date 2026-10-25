@@ -17,15 +17,20 @@ exclude = ["oracle/", "target/"]
 exclude = ["oracle"]
 
 [dependencies]
-zstd = "0.13"
+# zstd frames (none occurs in the game's files)
+ruzstd = "0.8"
 flate2 = "1"
-# Oodle streams (textures, models). Only src/unpack.rs touches it, so another decoder is a one-file change.
-oozextract = "0.5.6"
-# BC1..BC7 block decoders and the PNG writer, for `Texture::to_rgba` and `Texture::to_png`
-texture2ddecoder = { version = "0.1.2", optional = true }
+# Oodle streams (textures, models), clean-room; path dependency until it is published
+lztans = { path = "../lz-cleanroom-impl/crate" }
+# BC1..BC7 block decoders, for `Texture::to_rgba` and `Texture::to_png`; path dependency until it is published
+bcn-decode = { path = "../bcn-decode", optional = true }
 png = { version = "0.18.1", optional = true }
+
+[dev-dependencies]
+# to build zstd frames in the tests
+zstd = "0.13"
 
 [features]
 default = []
 # Texture::to_rgba and Texture::to_png
-png = ["dep:texture2ddecoder", "dep:png"]
+png = ["dep:bcn-decode", "dep:png"]
