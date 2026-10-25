@@ -1,0 +1,19 @@
+[package]
+name = "wt-unpack-vromfs-oracle"
+version = "0.0.0"
+edition = "2021"
+publish = false
+description = "Compares the vromfs and BLK readers of wt-unpack with wt_blk on a War Thunder install (an extra check: wt-formats does not contain them)"
+
+[dependencies]
+# The checkout of wt-unpack next to this repository
+wt-unpack = { path = "../../wt-unpack-publish" }
+wt_blk = { git = "https://github.com/patodois/wt_blk", rev = "498c996d30e95eac334d33bb7cdcc9ff88e16799" }
+memmap2 = "0.9"
+xxhash-rust = { version = "0.8", features = ["xxh3"] }
+libc = "0.2"
+
+[workspace]
+
+[profile.release]
+debug = false

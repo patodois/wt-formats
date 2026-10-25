@@ -1,0 +1,24 @@
+[package]
+name = "wt-formats-oracle"
+version = "0.0.0"
+edition = "2021"
+publish = false
+description = "Compares wt-formats with wt_blk (the reference that documented these formats first) on a War Thunder install"
+
+[dependencies]
+wt-formats = { path = "..", features = ["png"] }
+# The fork that wt-unpack used before wt-formats: upstream wt_blk plus the pull requests #27 to #29
+wt_blk = { git = "https://github.com/patodois/wt_blk", rev = "498c996d30e95eac334d33bb7cdcc9ff88e16799", features = ["png"] }
+memmap2 = "0.9"
+xxhash-rust = { version = "0.8", features = ["xxh3"] }
+libc = "0.2"
+# The evidence tool reads the Oodle block of a model on its own, without the crate under test
+oozextract = "0.5.6"
+flate2 = "1"
+zstd = "0.13"
+
+[workspace]
+
+[profile.release]
+debug = false
+opt-level = 3

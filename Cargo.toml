@@ -1,0 +1,30 @@
+[package]
+name = "wt-formats"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.90"
+description = "Readers for the Dagor Engine resource formats of War Thunder: GRP packs, DXP texture packs, DDSx textures, DynModels and skeletons"
+license = "MIT OR Apache-2.0"
+readme = "README.md"
+repository = "https://github.com/patodois/wt-formats"
+keywords = ["war-thunder", "dagor", "gamedev", "assets", "parser"]
+categories = ["game-development", "parser-implementations"]
+exclude = ["oracle/", "target/"]
+
+[workspace]
+# The oracle (oracle/) compares this crate with wt_blk on a game install; it is not part of the crate.
+exclude = ["oracle"]
+
+[dependencies]
+zstd = "0.13"
+flate2 = "1"
+# Oodle streams (textures, models). Only src/unpack.rs touches it, so another decoder is a one-file change.
+oozextract = "0.5.6"
+# BC1..BC7 block decoders and the PNG writer, for `Texture::to_rgba` and `Texture::to_png`
+texture2ddecoder = { version = "0.1.2", optional = true }
+png = { version = "0.18.1", optional = true }
+
+[features]
+default = []
+# Texture::to_rgba and Texture::to_png
+png = ["dep:texture2ddecoder", "dep:png"]
