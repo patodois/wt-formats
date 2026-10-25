@@ -82,7 +82,7 @@ cargo run --release --bin wt-formats-oracle -- fuzz "$GAME"       # mutated inpu
 
 ## Limits
 
-A block never unpacks to more than `MAX_UNPACKED` (1 GiB; the largest in the game is 85 MiB) bytes, whatever its header claims. Inside that cap
+A block never unpacks to more than `MAX_UNPACKED` (1 GiB; the largest texture in the game is 85 MiB) bytes, whatever its header claims. Inside that cap
 memory follows the data: Oodle output grows only while the stream keeps producing it, zstd and zlib are read
 as they come, and a count read from a file is checked against the bytes behind it before it sizes anything.
 A small zstd or Oodle stream can still describe a large, repetitive texture; the cap is the bound.

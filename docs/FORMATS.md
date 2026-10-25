@@ -100,7 +100,7 @@ Evidence, `content/base/res/tanks/usa_m4a1_76w_sherman.grp`, resource `m4a1_76w_
 
 ```
 001c72a0: 4c 75 00 00  aa 00 00 00  | 00 00 80 3f 00 00 00 00 ...    dump size 0x754c, 170 nodes, not packed
-node 0 at +0x08: parent 0x00000000FFFFFFFF, name at 27200 (= 170 * 160) -> ""        (the root, "@root" elsewhere)
+node 0 at +0x08: parent 0x00000000FFFFFFFF, name at 27200 (= 170 * 160), which reads as an empty string
 node 1 at +0xa8: parent 0, name at 27201 -> "root"
 ```
 
