@@ -1,8 +1,11 @@
 # Agreement with wt_blk
 
-`oracle/` is a separate program (not part of the crate) that parses the same bytes with this crate and with wt_blk
-(the fork `patodois/wt_blk` at `498c996`, which wt-unpack used before) and compares the results. wt_blk is a black
-box here: nothing it does is assumed right. Run on War Thunder 2.59.0.80 (macOS), 3 worker threads, peak resident
+`oracle/` is a separate program (not part of the crate) that parses the same bytes with this crate and with the
+fork `patodois/wt_blk` at `498c996`, which wt-unpack used before, and compares the results. The readers it
+compares with are this project's own earlier code (its pull requests #28 and #29 to wt_blk), and the decoder crates
+underneath are the same, so this is a regression check, not an independent validation of the layouts: that is what
+the surveys of the game's bytes in [FORMATS.md](FORMATS.md) are for. The fork is a black box here: nothing it does
+is assumed right. Run on War Thunder 2.59.0.80 (macOS), 3 worker threads, peak resident
 memory 0.92 GB (GRP) and 2.65 GB (DXP, mostly memory-mapped file pages).
 
 ## GRP packs: `oracle grp`
@@ -62,7 +65,8 @@ section with other than one variant or with a gap (see [FORMATS.md](FORMATS.md#n
 ## Extra: wt-unpack's own vromfs and BLK readers: `oracle-vromfs`
 
 wt-unpack does **not** use wt_blk's vromfs or BLK code: it has its own (`src/vromfs.rs`, `src/blk.rs`), written from
-the Dagor sources. They are not in this crate. As the same method applies, `oracle-vromfs/` (a separate program that
+the Dagor sources. They are not in this crate. Here wt_blk's vromfs and BLK code is upstream's own, so this
+comparison is between two independent readers. As the same method applies, `oracle-vromfs/` (a separate program that
 depends on the wt-unpack checkout next to this repository) compares them with wt_blk on every vromfs of the install.
 
 | Compared | Result |

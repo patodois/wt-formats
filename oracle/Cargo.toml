@@ -3,7 +3,7 @@ name = "wt-formats-oracle"
 version = "0.0.0"
 edition = "2021"
 publish = false
-description = "Compares wt-formats with wt_blk (the reference that documented these formats first) on a War Thunder install"
+description = "Compares wt-formats with the project's own earlier readers (the patodois/wt_blk fork) on a War Thunder install: a regression check"
 
 [dependencies]
 wt-formats = { path = "..", features = ["png"] }

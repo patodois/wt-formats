@@ -4,19 +4,17 @@ The layouts this crate reads, written down as facts: offsets, types, constants, 
 evidence is a file of a War Thunder 2.59.0.80 install (macOS) and the bytes in it. "All N files" means a
 survey of every `.grp` or `.dxp.bin` in the install (3,263 GRP files, 13.0 GB; 4,318 DXP files, 55.9 GB),
 made by a script that reads the bytes directly (no library); the scripts are in
-[`oracle/survey/`](../oracle/survey).
+[`oracle/survey/`](https://github.com/patodois/wt-formats/tree/main/oracle/survey).
 
 ## Where this comes from
 
-These formats were documented first by
-[wt_blk](https://github.com/Warthunder-Open-Source-Foundation/wt_blk) (MIT), whose source was read to learn
-the layouts, and by the comments in it that name the Dagor Engine source files the layouts come from
-(`grpData.h`, `texPackMgr2.cpp`, `ddsxTex.h`, `dynSceneRes.cpp`, `shSkinnedMesh.cpp`, `geomTree.cpp`,
-`matVdataLoad.cpp`; the engine is open source at
-[GaijinEntertainment/DagorEngine](https://github.com/GaijinEntertainment/DagorEngine), and those files were
-not read for this crate). Everything below was then checked against the game's files, and the code of this
-crate was written from these notes, not from wt_blk's code. The crate is compared with wt_blk on the whole
-install; see [the README](../README.md#how-it-was-checked).
+The formats are Dagor Engine's, and the layouts come from its sources (BSD-3-Clause,
+[GaijinEntertainment/DagorEngine](https://github.com/GaijinEntertainment/DagorEngine)): `grpData.h`, `texPackMgr2.cpp`,
+`ddsxTex.h`, `ddsxTexMipOrder.h`, `dynSceneRes.cpp`, `shSkinnedMesh.cpp`, `geomTree.cpp` and `matVdataLoad.cpp`. This
+project first wrote them down as readers in its own pull requests #28 and #29 to wt_blk (unmerged), whose module
+comments and descriptions name those files. This crate was written after those readers, not as a clean-room rewrite (see
+[the README](https://github.com/patodois/wt-formats#credit-and-provenance)), and every layout below was checked against
+the game's files. The Dagor files were not read for this document; the evidence is the game data.
 
 What the data does not show, this document does not claim. Where a branch of the code is not exercised by any
 file of the install, it says so in "Not seen in the data" at the end.
@@ -33,7 +31,8 @@ file of the install, it says so in "Not seen in the data" at the end.
 - A **block** (in the model streams) is a `u32` followed by that many bytes. The low 30 bits of the `u32` are
   the length; the top two bits are a tag. In all 16,663 packed vertex blocks of the install the tag is 2 and the
   contents are `u32 unpacked size` followed by an Oodle stream (its first byte is `0x8C`). A zstd frame
-  inside a block is recognised by its magic (`28 B5 2F FD`); none occurs in the install.
+  inside a block is recognised by its magic (`28 B5 2F FD`); none occurs in the install. The largest unpacked
+  size of those 16,663 blocks is 32,211,452 bytes (`oracle/survey/block_sizes.py`).
 
 ## GRP packs (`*.grp`)
 
