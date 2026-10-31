@@ -287,6 +287,67 @@ fn random_bytes_are_refused_quickly() {
     }
 }
 
+/// Writes the seed corpora of the fuzz targets in `fuzz/` (run with `WT_FORMATS_SEED_DIR` set to the corpus root):
+/// small synthetic files built by the helpers of the tests above, nothing from a game.
+#[test]
+#[ignore = "writes files; run by hand to refresh the corpora of fuzz/"]
+fn write_fuzz_seeds() {
+    let Some(root) = std::env::var_os("WT_FORMATS_SEED_DIR") else { return };
+    let root = std::path::PathBuf::from(root);
+    let put = |target: &str, name: &str, bytes: &[u8]| {
+        let dir = root.join(target);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join(name), bytes).unwrap();
+    };
+    put("grp", "three", &grp_pack(&[("a", 1, b"xyz"), ("b", 2, b"12345678"), ("c", 3, b"")]));
+    put("grp", "empty", &grp_pack(&[]));
+    put("grp", "model_class", &grp_pack(&[("only", 0xB4B7_D9C4, &[7; 100])]));
+    put("dxp", "two", &dxp_pack(&[("one*", 1), ("two*?u03", 2)]));
+    put("dxp", "one", &dxp_pack(&[("x", 9)]));
+    put("dxp", "empty", &dxp_pack(&[]));
+    put("geom_node_tree", "five", &tree(&[0, 0, 1, 1, 3]));
+    put("geom_node_tree", "one", &tree(&[0]));
+    put("geom_node_tree", "empty", &tree(&[]));
+    put("dynmodel", "rigid", &model());
+    put("dynmodel", "skinned", &skinned_model());
+    for (name, bytes) in [
+        ("sequence", vec![0xD1, 0, 4, 4, 4, 0, 0, 0, 0]),
+        ("two_byte_value", vec![0xD1, 0x80, 0x01, 0, 0, 0, 0]),
+        ("version_0", vec![0xD0, 0, 0, 0, 0]),
+    ] {
+        // the fuzz target reads a count and a width flag from the first two bytes
+        let count: u16 = if name == "two_byte_value" { 1 } else { 4 };
+        let mut input = ((count << 1) | 1).to_le_bytes().to_vec();
+        input.extend_from_slice(&bytes);
+        put("meshopt", name, &input);
+    }
+    // DDSx: a header and its data, as the target reads them
+    let header = |h: DdsxHeader, data: &[u8]| {
+        let mut b = Vec::new();
+        b.extend_from_slice(b"DDSx");
+        b.extend_from_slice(&h.d3d_format.to_le_bytes());
+        b.extend_from_slice(&h.flags.to_le_bytes());
+        b.extend_from_slice(&h.width.to_le_bytes());
+        b.extend_from_slice(&h.height.to_le_bytes());
+        b.extend_from_slice(&[h.levels, h.hq_part_levels]);
+        b.extend_from_slice(&h.depth.to_le_bytes());
+        b.extend_from_slice(&h.bits_per_pixel.to_le_bytes());
+        b.extend_from_slice(&[0, h.dxt_shift]);
+        b.extend_from_slice(&h.mem_size.to_le_bytes());
+        b.extend_from_slice(&h.packed_size.to_le_bytes());
+        b.extend_from_slice(data);
+        b
+    };
+    let packed = zstd::bulk::compress(&[3u8; 40], 0).unwrap();
+    put("ddsx", "stored", &header(dxt1(8, 2, 0, 40), &[1; 40]));
+    put("ddsx", "zstd", &header(DdsxHeader { packed_size: packed.len() as u32, ..dxt1(8, 2, 0x2000_0000, 40) }, &packed));
+    put("ddsx", "cubemap_reversed", &header(dxt1(4, 2, 0x4_0800, 96), &[2; 96]));
+    put("ddsx", "volume", &header(DdsxHeader { depth: 4, ..dxt1(4, 3, 0x1000, 56) }, &[5; 56]));
+    put("ddsx", "argb", &header(DdsxHeader { d3d_format: 21, dxt_shift: 0, bits_per_pixel: 32, ..dxt1(2, 1, 0, 16) }, &[9; 16]));
+    put("ddsx", "oodle_stored", &header(DdsxHeader { packed_size: 6, ..dxt1(8, 1, 0x6000_0000, 32) }, &[0x8C, 0x06, 0, 0, 0, 0]));
+    put("ddsx", "bc1_top", &header(dxt1(4, 1, 0, 8), &[0; 8]));
+}
+
 /// The same checks on the real files, a few at a time, when the game is there
 #[test]
 fn real_resources_cut_and_changed() {

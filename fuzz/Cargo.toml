@@ -1,0 +1,60 @@
+[package]
+name = "wt-formats-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+
+[dependencies.wt-formats]
+path = ".."
+features = ["png"]
+
+# Not part of the crate's workspace: the stable build and CI never see it (needs nightly: `cargo +nightly fuzz run <target>`)
+[workspace]
+
+[[bin]]
+name = "grp"
+path = "fuzz_targets/grp.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "dxp"
+path = "fuzz_targets/dxp.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "ddsx"
+path = "fuzz_targets/ddsx.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "dynmodel"
+path = "fuzz_targets/dynmodel.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "geom_node_tree"
+path = "fuzz_targets/geom_node_tree.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "meshopt"
+path = "fuzz_targets/meshopt.rs"
+test = false
+doc = false
+bench = false
