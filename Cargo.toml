@@ -9,12 +9,12 @@ readme = "README.md"
 repository = "https://github.com/patodois/wt-formats"
 keywords = ["war-thunder", "dagor", "gamedev", "assets", "parser"]
 categories = ["game-development", "parser-implementations"]
-exclude = ["oracle/", "target/"]
+exclude = ["oracle/", "target/", "fuzz/"]
 
 [workspace]
 # The oracle (oracle/) compares this crate with the earlier readers of the project on a game install; it is not
 # part of the crate.
-exclude = ["oracle"]
+exclude = ["oracle", "fuzz"]
 
 [dependencies]
 # zstd frames (none occurs in the game's files)
