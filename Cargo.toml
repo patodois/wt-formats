@@ -1,6 +1,6 @@
 [package]
 name = "wt-formats"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 rust-version = "1.90"
 description = "Readers for the Dagor Engine resource formats of War Thunder: GRP packs, DXP texture packs, DDSx textures, DynModels and skeletons"

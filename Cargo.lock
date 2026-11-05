@@ -180,7 +180,7 @@ checksum = "86a801b3cea342a06d468c8710662aa29e5e05e4f5c0d62f00bbb7f2ad7941c2"
 
 [[package]]
 name = "wt-formats"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "bcn-decode",
  "flate2",

@@ -639,12 +639,18 @@ fn read_bones(dump: &[u8], node_name: &dyn Fn(usize) -> Result<String>) -> Resul
         bones.push(Bone { node: node_name(node)?, inverse_bind });
     }
 
+    // Every material takes its own copy of its palette, and a hostile table can point them all at one
+    // long list, so the copies together may not take more bytes than the dump they come from
+    let mut palette_bytes = dump.len();
     let mut materials = Vec::with_capacity(material_count);
     for i in 0..material_count {
         let material = Reader::at(dump, materials_at + i * 8)?.size()?;
         let mut p = Reader::at(dump, palettes_at + i * 16)?;
         let (slots_at, slot_count) = (p.size()?, p.size()?);
         check_table(dump, slots_at, slot_count, 2)?;
+        palette_bytes = palette_bytes
+            .checked_sub(slot_count * 2)
+            .ok_or_else(|| invalid("the palettes add up to more than the dump they are stored in"))?;
         let mut slots = Reader::at(dump, slots_at)?;
         let mut palette = Vec::with_capacity(slot_count);
         for _ in 0..slot_count {
@@ -1102,6 +1108,39 @@ pub(crate) mod tests {
         let ok = DynModel::parse(&build(1)).unwrap();
         assert_eq!(ok.lods[0].rigids[0].node.len(), 1000);
         assert!(DynModel::parse(&build(40)).is_err());
+    }
+
+    /// A dump whose `material_count` palettes all point at one list of `slot_count` slots.
+    fn shared_palette_dump(material_count: usize, slot_count: usize) -> Vec<u8> {
+        let tm_at = 0x38;
+        let nodes_at = tm_at + 48;
+        let materials_at = nodes_at + 2;
+        let palettes_at = materials_at + material_count * 8;
+        let slots_at = palettes_at + material_count * 16;
+        let mut d = vec![0u8; slots_at + slot_count * 2];
+        set32(&mut d, 0, tm_at as u32);
+        set32(&mut d, 4, 1);
+        set32(&mut d, 0x10, palettes_at as u32);
+        set32(&mut d, 0x14, material_count as u32);
+        d[0x20..0x28].copy_from_slice(&(nodes_at as u64).to_le_bytes());
+        d[0x28..0x30].copy_from_slice(&(materials_at as u64).to_le_bytes());
+        for i in 0..material_count {
+            set32(&mut d, palettes_at + i * 16, slots_at as u32);
+            set32(&mut d, palettes_at + i * 16 + 4, slot_count as u32);
+        }
+        d
+    }
+
+    #[test]
+    fn palette_copies_cannot_take_more_than_the_dump() {
+        let node_name = |_: usize| Ok(String::from("bone"));
+        // One copy of the list fits in the dump
+        let (_, ok) = read_bones(&shared_palette_dump(1, 4096), &node_name).unwrap();
+        assert_eq!(ok[0].palette.len(), 4096);
+        // 128 materials on one list of 4,096 slots: 1 MiB of copies from an 11 KB dump
+        let d = shared_palette_dump(128, 4096);
+        assert!(d.len() < 16 << 10);
+        assert!(read_bones(&d, &node_name).is_err());
     }
 
     /// The skinned meshes section for one LOD with one skin on node 1 ("track"): bones on nodes 0 and 2,

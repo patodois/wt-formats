@@ -92,6 +92,8 @@ cargo run --release --bin wt-formats-oracle -- fuzz "$GAME"       # mutated inpu
   dump is bounded by its own size field (at most 1 MiB), so a packed skeleton can never unpack to more.
 - A small zstd or Oodle stream can still describe a large, repetitive texture or vertex buffer: for those the bound is
   the cap, and buffers may reach twice it while they grow.
+- A skinned mesh's palettes are copied per material, and the copies together may not take more bytes than the dump they
+  come from. No model of War Thunder 2.59.0.80 has a palette slot at all (30,690 skinned materials, 0 slots).
 - `Texture::to_rgba` and `to_png` refuse more than `MAX_RGBA_PIXELS` (8192 by 8192, the largest texture of the game) and
   take 4 bytes a pixel.
 
